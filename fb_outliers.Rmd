@@ -1,0 +1,315 @@
+---
+title: "facebook_metrics"
+output: pdf_document
+---
+
+```{r}
+library(tidyverse)
+library(MASS)
+library(dplyr)
+```
+
+
+
+```{r}
+data = read.csv(file = 'Test_Case_1.csv', header = F)
+data
+```
+
+```{r}
+#data = read.csv(file = 'Features_TestSet.csv', header = F)
+#data
+```
+
+
+
+
+```{r}
+cols = c("Page Popularity", "Page Checkins", "Page talking about", "Page Category",
+        "C1_0", "C1_1", "C1_2", "C1_3", "C1_4",
+        "C2_0", "C2_1", "C2_2", "C2_3", "C2_4",
+        "C3_0", "C3_1", "C3_2", "C3_3", "C3_4",
+        "C4_0", "C4_1", "C4_2", "C4_3", "C4_4",
+        "C5_0", "C5_1", "C5_2", "C5_3", "C5_4",
+        "CC1", "CC2", "CC3", "CC4", "CC5",
+        "Base time", "Post length", "Post Share Count", "Post Promotion Status", "H Local",
+        "Pub0", "Pub1", "Pub2", "Pub3", "Pub4", "Pub5", "Pub6",
+        "Dt0", "Dt1", "Dt2", "Dt3", "Dt4", "Dt5", "Dt6",
+        "Target Variable")
+
+colnames(data) = cols
+data
+```
+
+
+```{r}
+add_later = c("Page Category")
+
+vars = c("Page Popularity", "Page Checkins", "Page talking about",
+         "Post length", "Post Share Count","H Local", "Target Variable")
+
+metrics = data[vars]
+
+# Normalize Comments
+metrics["Comments/Hr"] = metrics["Target Variable"]/metrics["H Local"]
+
+# Remove H Local and Target Variable
+vars = c("Page Popularity", "Page Checkins", "Page talking about", 
+         "Post length", "Post Share Count", "Comments/Hr")
+metrics = metrics[vars]
+
+# Set null values to 0
+metrics[is.na(metrics)] = 0
+
+# Avoid 0 values in response
+metrics$`Comments/Hr` = metrics$`Comments/Hr` + 0.00000001
+
+# Avoid 0 values in predictors
+metrics$`Page Checkins` = metrics$`Page Checkins` + 0.00000001
+metrics$`Post length` = metrics$`Post length` + 0.00000001
+
+# Remove Outliers
+summary(metrics$`Post Share Count`)
+
+metrics = metrics %>% arrange(desc(`Post Share Count`)) %>%
+        slice(-1:-2)
+
+outlier.test.model = lm(`Comments/Hr` ~ ., data = metrics)
+rs = rstandard(outlier.test.model)
+rs #7, 39
+
+metrics = metrics %>% arrange(desc(`Post Share Count`)) %>%
+        slice(-7,-39)
+
+metrics
+```
+
+
+```{r}
+model = lm(`Comments/Hr` ~ ., data = metrics)
+summary(model)
+```
+
+
+```{r}
+pairs(metrics)
+```
+
+
+## Stepwise Regression
+
+```{r}
+# predictors
+comments = metrics$`Comments/Hr`
+popularity = metrics$`Page Popularity`
+checkins = metrics$`Page Checkins`
+talkabt = metrics$`Page talking about`
+postlen = metrics$`Post length`
+sharecount = metrics$`Post Share Count`
+```
+
+```{r}
+mod0 = lm(comments ~ 1)
+add1(mod0, ~.+popularity+checkins+talkabt+postlen+sharecount, test = 'F')
+```
+
+```{r}
+mod1 = update(mod0, ~.+talkabt)
+add1(mod1, ~.+popularity+checkins+postlen+sharecount, test = 'F')
+```
+
+```{r}
+mod2 = update(mod1, ~.+popularity)
+
+# Check that added variable does not affect original predictors
+summary(mod2)
+```
+
+```{r}
+add1(mod2, ~.+checkins+postlen+sharecount, test = 'F')
+```
+
+`mod2` seems to be the best model for our target variable.
+
+```{r}
+plot(fitted(mod2), resid(mod2), xlab = 'Fitted Values', ylab = 'Residuals', main = 'Residuals vs Fitted Value')
+```
+
+```{r}
+boxcox(mod2, lambda = seq(-1, 1, length = 10))
+```
+
+```{r}
+model = lm(comments^0.2 ~ talkabt + popularity)
+plot(fitted(model), resid(model), xlab = 'Fitted Values', ylab = 'Residuals', main = 'Residuals vs Fitted Value')
+```
+```{r}
+summary(model)
+```
+
+```{r}
+par(mfrow=c(1,2))
+
+
+plot(fitted(lm(comments^0.2 ~ talkabt)), resid(lm(comments^0.2 ~ talkabt)), xlab = 'Popularity', ylab = 'Residuals', main = 'Residuals vs Page Talkin About')
+
+plot(fitted(lm(comments^0.2 ~ popularity)), resid(lm(comments^0.2 ~ popularity)), xlab = 'Checkins', ylab = 'Residuals', main = 'Residuals vs Page Popularity')
+```
+
+
+```{r}
+par(mfrow=c(1,2))
+
+model.t.x1 = lm(comments^0.2 ~ log(talkabt))
+model.t.x2 = lm(comments^0.2 ~ log(popularity))
+
+plot(fitted(model.t.x1), resid(model.t.x1), xlab = 'Popularity', ylab = 'Residuals', main = 'Residuals vs Page Talkin About')
+
+plot(fitted(model.t.x2), resid(model.t.x2), xlab = 'Checkins', ylab = 'Residuals', main = 'Residuals vs Page Popularity')
+```
+
+
+```{r}
+model.transform = lm(comments^0.2 ~ log(talkabt) + log(popularity))
+summary(model.transform)
+```
+
+```{r}
+plot(fitted(model.transform), resid(model.transform), xlab = 'Fitted Values', ylab = 'Residuals', main = 'Residuals vs Fitted Value')
+```
+
+```{r}
+qqnorm(resid(model.transform))
+qqline(resid(model.transform))
+```
+
+```{r}
+outlier.test.model = lm(`Comments/Hr` ~ ., data = metrics)
+rs = rstandard(outlier.test.model)
+rs #7, 39
+```
+
+
+```{r}
+summary(metrics)
+#find average data
+avgdata = data.frame(talkabt = mean(talkabt),
+                     popularity = mean(popularity))
+predict(model.transform, avgdata, interval = "confidence", level = 0.95) #0.8772555 0.730987 1.023524
+prediction = 0.8772555^(1/0.2)
+prediction
+ci.lower = 0.730987^(1/0.2)
+ci.lower
+ci.upper = 1.023524^(1/0.2)
+ci.upper
+```
+
+
+
+\newpage
+
+
+# Research Question 1:  
+
+```{r}
+model.transform
+```
+
+
+$Y = 0.2089 + 0.2202x_1 - 0.1359x_2$
+
+$\beta_0 = 0.07223$  
+$\beta_1 = 0.18196$  
+$\beta_2 = -0.09729$
+
+# Research Question 2:
+
+Can the number of comments received per hour be predicted by at least one of our selected variables?  
+
+$H_0: \beta_1 = \beta_2 = 0$  
+$H_1: \text{At least one } \beta_k \neq 0 $ (k = 1,2)  
+$\alpha = 0.05$
+
+```{r}
+mod.full2 = lm((comments)^0.2 ~ log(talkabt) + log(popularity))
+mod.reduced2 = lm((comments)^0.2 ~ 1)
+anova(mod.reduced2, mod.full2)
+```
+
+F-Statistic = 7.8878  
+P-value = 0.0006851
+
+Since p-value is less than alpha, we reject the null hypothesis. There is sufficient evidence to suggest that at least one of the slope parameters is not equal to 0 and one of our selected predictors is useful in predicting comments/hr.  
+
+Research Question 3:  
+
+# Hypothesis test for testing that one slope parameter is 0.
+
+$H_0: \beta_2 = 0$  
+$H_1: \beta_2 \neq 0 $
+$\alpha = 0.05$
+
+
+```{r}
+mod.reduced = lm((comments)^0.2 ~ log(popularity))
+mod.full = lm((comments)^0.2 ~ log(talkabt) + log(popularity))
+anova(mod.reduced, mod.full)
+```
+
+F-Statistic = 11.579  
+P-Value = 0.0009855  
+
+Our p-value is less than 0.05 so we reject the null hypothesis and conclude that page popularity is significantly linearly related to comments/hr.
+
+
+```{r}
+summary(metrics)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
